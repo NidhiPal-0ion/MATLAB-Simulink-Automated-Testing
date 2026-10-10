@@ -1,0 +1,89 @@
+name: SimuVerify CI - Automated Validation Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  # =========================================================================
+  # 1. Framework Test Suite & Standalone Deterministic CI Execution
+  #    Executes on standard GitHub-hosted runners (Ubuntu & Windows) without
+  #    requiring proprietary software licenses.
+  # =========================================================================
+  verify-framework:
+    name: Verify Framework (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        python-version: [ "3.11", "3.12" ]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run automated framework unit tests (pytest)
+        run: |
+          pytest tests/ -v --junitxml=reports/junit.xml
+
+      - name: Execute SimuVerify validation suite (CI Mode)
+        run: |
+          python scripts/run_simuverify.py --config config/test_cases.json --output-dir reports/ --format all --mode ci
+
+      - name: Upload validation reports and response plots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simuverify-validation-reports-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: |
+            reports/validation_report.html
+            reports/validation_summary.csv
+            reports/validation_results.json
+            reports/plots/
+          retention-days: 14
+
+  # =========================================================================
+  # 2. MathWorks MATLAB / Simulink Enterprise Integration (Optional)
+  #    This optional job demonstrates how licensed MATLAB/Simulink runners
+  #    are integrated into GitHub Actions once MathWorks credentials or
+  #    self-hosted runners with MATLAB licenses are configured.
+  #    Uncomment and configure secrets.MATLAB_NETWORK_LICENSE_TOKEN to enable.
+  # =========================================================================
+  # matlab-native-verification:
+  #   name: MATLAB / Simulink Native Verification
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Check out repository
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Set up MathWorks MATLAB
+  #       uses: mathworks/setup-matlab@v2
+  #       # For private repositories or cloud runners, provide a network license token:
+  #       # with:
+  #       #   token: ${{ secrets.MATLAB_NETWORK_LICENSE_TOKEN }}
+  #
+  #     - name: Run MATLAB Test Harness
+  #       uses: mathworks/run-command@v2
+  #       with:
+  #         command: "addpath(genpath('matlab')); run_all_tests('config/test_cases.json', 'reports');"
+  #
+  #     - name: Upload MATLAB Artifacts
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: matlab-native-reports
+  #         path: reports/
